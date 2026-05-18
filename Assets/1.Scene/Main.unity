@@ -732,7 +732,7 @@ MonoBehaviour:
   CameraSide: 1
   CameraDistance: 3
   AvoidObstacles:
-    Enabled: 0
+    Enabled: 1
     CollisionFilter:
       serializedVersion: 2
       m_Bits: 1
@@ -2439,10 +2439,11 @@ MonoBehaviour:
   SprintSpeed: 8
   SpeedChangeRate: 10
   RotationSmoothTime: 0.12
-  JumpHeight: 1.2
+  JumpHeight: 1.5
   JumpTimeout: 0.5
   Gravity: -15
-  FallTimeout: 0.15
+  FallMultiplier: 2.5
+  JumpBufferTime: 0.15
   Grounded: 1
   GroundedOffset: -0.14
   GroundedRadius: 0.28

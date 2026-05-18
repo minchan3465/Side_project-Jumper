@@ -1,212 +1,246 @@
-using System.Collections;
+ï»¿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using Unity.Cinemachine;
 
 public class PlayerController : MonoBehaviour {
-	[Header("ÇÃ·¹ÀÌ¾î")]
-	public float MoveSpeed = 2.0f;          //ÀÌµ¿ ¼Óµµ
-	public float SprintSpeed = 6.0f;        //ÁúÁÖ ¼Óµµ
-	public float SpeedChangeRate = 10.0f;   //°¡¼Ó,°¨¼Ó
-	public float RotationSmoothTime = 0.12f;//ÇÃ·¹ÀÌ¾î°¡ ÀÌµ¿ ¹æÇâÀ» ÇâÇØ È¸ÀüÇÏ´Â ¼Óµµ.
+    [Header("í”Œë ˆì´ì–´ ì´ë™")]
+    public float MoveSpeed = 2.0f;
+    public float SprintSpeed = 6.0f;
+    public float SpeedChangeRate = 15.0f;       // [ìˆ˜ì •] 10 â†’ 15, ê°€ì†/ê°ì† ë” ë¹ ë¦¿í•˜ê²Œ
+    public float RotationSmoothTime = 0.06f;    // [ìˆ˜ì •] 0.12 â†’ 0.06, ë°©í–¥ ì „í™˜ ì¦‰ê° ë°˜ì‘
 
-	public float JumpHeight = 1.2f;         //Á¡ÇÁ ³ôÀÌ
-	public float JumpTimeout = 0.50f;       //Á¡ÇÁ ÄğÅ¸ÀÓ.
-	public float Gravity = -15.0f;          //Áß·Â °ª.
+    [Header("ì í”„ / ì¤‘ë ¥")]
+    public float JumpHeight = 1.2f;
+    public float JumpTimeout = 0.50f;
+    public float Gravity = -15.0f;
+    public float FallMultiplier = 2.5f;         // [ì¶”ê°€] ë‚™í•˜ ê°€ì† ë°°ìœ¨ (ë¹ ë¦¿í•œ ë‚™í•˜)
 
+    // [ì œê±°] FallTimeout â€” Coyote Time ì—†ì´ ì¦‰ê° FreeFall íŒì •
+    // public float FallTimeout = 0.15f;
 
-	public float FallTimeout = 0.15f;       //Ãß¶ô »óÅÂ·Î ÁøÀÔÇÏ±â Àü±îÁöÀÇ ´ë±â ½Ã°£. °è´Ü ³»·Á°¥ ¶§ À¯¿ë. (¾Ö´Ï¸ŞÀÌ¼Ç ÀÌ¾ß±âÀÎµí?)
+    [Header("ì í”„ ë²„í¼")]
+    public float JumpBufferTime = 0.15f;        // [ì¶”ê°€] ì°©ì§€ ì§ì „ ì í”„ ì…ë ¥ì„ ê¸°ì–µí•˜ëŠ” ì‹œê°„
 
-	public bool Grounded = true;            //ÇÃ·¹ÀÌ¾î Áö¸é Ã¼Å©
-	public float GroundedOffset = -0.14f;   //°ÅÄ£ Áö¸é¿¡¼­ À¯¿ëÇÏ°Ô »ç¿ëÇÒ ¼ö ÀÖ´Â ¿ÀÇÁ¼Â °ª. (¹¹¶ó´Â°ÇÁö ¸ğ¸£°Ú´ç)
-	public float GroundedRadius = 0.28f;    //Áö¸é Ã¼Å© ±¸Ã¼ ¹İÁö¸§. CharacterControllerÀÇ ¹İÁö¸§°ú ÀÏÄ¡ÇØ¾ßÇÑ´Ù³×¿ä.
+    [Header("ì§€ë©´ ì²´í¬")]
+    public bool Grounded = true;
+    public float GroundedOffset = -0.14f;
+    public float GroundedRadius = 0.28f;
+    public LayerMask GroundLayers;
 
-	public LayerMask GroundLayers;          //ÇÃ·¹ÀÌ¾î°¡ Áö¸éÀ¸·Î ÀÎ½ÄÇÒ ·¹ÀÌ¾î ¸¶½ºÅ©
+    [Header("ì‹œë„¤ë¨¸ì‹  ì¹´ë©”ë¼")]
+    [SerializeField] private Transform _cameraRoot;
+    [SerializeField] private float _mouseSensitive = 1.0f;
 
-	[Header("½Ã³×¸Ó½Å Ä«¸Ş¶ó")]
-	[SerializeField] private Transform _cameraRoot;
-	[SerializeField] private float _mouseSensitive = 1.0f;
+    // ì»´í¬ë„ŒíŠ¸
+    private InputController _input;
+    private CharacterController _controller;
+    private GameObject _mainCamera;
+    private Animator _animator;
 
+    // ì¹´ë©”ë¼
+    private float _targetYaw;
+    private float _targetPitch;
+    private float _threshold = 0.01f;
 
-	private InputController _input;
-	private CharacterController _controller;
-	private GameObject _mainCamera;
-	private Animator _animator;
+    // ì´ë™
+    private float _speed;
+    private float _animationBlend;
+    private float _targetRotation = 0.0f;
+    private float _rotationVelocity;
+    private float _verticalVelocity;
+    private float _terminalVelocity = 53.0f;
 
-	private float _targetYaw;
-	private float _targetPitch;
-	private float _threshold = 0.01f;
+    // íƒ€ì´ë¨¸
+    private float _jumpTimeoutDelta;
+    private float _jumpBufferDelta;             // [ì¶”ê°€] ì í”„ ë²„í¼ íƒ€ì´ë¨¸
 
-	private float _speed;
-	private float _animationBlend;
-	private float _targetRotation = 0.0f;
-	private float _verticalVelocity;
-	private float _rotationVelocity;
-	private float _terminalVelocity = 53.0f;    //Á¾´Ü ¼Óµµ
+    // ìƒíƒœ
+    private bool _wasGrounded;                  // [ì¶”ê°€] ì´ì „ í”„ë ˆì„ ì§€ë©´ ì—¬ë¶€ (Stop íŒì •ìš©)
+    private bool _isStopping;                   // [ì¶”ê°€] Stop ì• ë‹ˆë©”ì´ì…˜ ì¬ìƒ ì¤‘ ì—¬ë¶€
 
-	private float _jumpTimeoutDelta;
-	private float _fallTimeoutDelta;
+    // ì• ë‹ˆë©”ì´ì…˜ ID
+    private int _animIDSpeed;
+    private int _animIDGrounded;
+    private int _animIDJump;
+    private int _animIDFreeFall;
+    private int _animIDStop;                    // [ìˆ˜ì •] ì´ì œ ì‹¤ì œë¡œ ì‚¬ìš©
 
-	private float sprintThreshhold = 4f;
+    private void Awake() {
+        if (_mainCamera == null) {
+            _mainCamera = GameObject.FindGameObjectWithTag("MainCamera");
+        }
+        TryGetComponent(out _input);
+        TryGetComponent(out _controller);
+        TryGetComponent(out _animator);
+    }
 
-	//¾Ö´Ï¸ŞÀÌ¼Ç IDº¯¼ö
-	private int _animIDSpeed;
-	private int _animIDStop;
-	private int _animIDJump;
-	private int _animIDGrounded;
+    private void Start() {
+        AssignAnimationIDs();
+        _jumpTimeoutDelta = JumpTimeout;
+        _jumpBufferDelta = 0f;
+    }
 
-	private void Awake() {
-		if (_mainCamera == null) {
-			_mainCamera = GameObject.FindGameObjectWithTag("MainCamera");
-		}
-		TryGetComponent(out _input);
-		TryGetComponent(out _controller);
-		TryGetComponent(out _animator);
-	}
-	private void Start() {
-		AssignAnimationIDs();
+    private void Update() {
+        GroundedCheck();
+        JumpAndGravity();
+        Move();
+    }
 
-		_jumpTimeoutDelta = JumpTimeout;
-		_fallTimeoutDelta = FallTimeout;
-	}
+    private void LateUpdate() {
+        CameraRotation();
+    }
 
-	private void Update() {
-		JumpAndGravity();
-		GroundedCheck();
-		Move();
-	}
-	private void LateUpdate() {
-		CameraRotation();
-	}
+    private void AssignAnimationIDs() {
+        _animIDSpeed = Animator.StringToHash("Speed");
+        _animIDGrounded = Animator.StringToHash("Grounded");
+        _animIDJump = Animator.StringToHash("Jump");
+        _animIDFreeFall = Animator.StringToHash("FreeFall");
+        _animIDStop = Animator.StringToHash("Stop");
+    }
 
-	private void AssignAnimationIDs() {
-		_animIDSpeed = Animator.StringToHash("Speed");
-		_animIDStop = Animator.StringToHash("Stop");
-		_animIDJump = Animator.StringToHash("Jump");
-		_animIDGrounded = Animator.StringToHash("Grounded");
-	}
-	private void GroundedCheck() {
-		Vector3 spherePosition = new Vector3(transform.position.x, transform.position.y - GroundedOffset, transform.position.z);
-		Grounded = Physics.CheckSphere(spherePosition, GroundedRadius, GroundLayers, QueryTriggerInteraction.Ignore);
+    private void GroundedCheck() {
+        _wasGrounded = Grounded; // [ì¶”ê°€] ì´ì „ í”„ë ˆì„ ìƒíƒœ ì €ì¥
 
-		if (_animator) {
-			_animator.SetBool(_animIDGrounded, Grounded);
-		}
-	}
-	private void CameraRotation() {
-		if (_input.look.sqrMagnitude >= _threshold) {
-			_targetYaw += _input.look.x * _mouseSensitive;
-			_targetPitch -= _input.look.y * _mouseSensitive;
+        Vector3 spherePosition = new Vector3(
+            transform.position.x,
+            transform.position.y - GroundedOffset,
+            transform.position.z
+        );
+        Grounded = Physics.CheckSphere(spherePosition, GroundedRadius, GroundLayers, QueryTriggerInteraction.Ignore);
 
+        if (_animator) {
+            _animator.SetBool(_animIDGrounded, Grounded);
+        }
+    }
 
-		}
-		if (_targetYaw < -360f) _targetYaw += 360f;
-		if (_targetYaw > 360f) _targetYaw -= 360f;
-		_targetPitch = Mathf.Clamp(_targetPitch, -30f, 70f);
+    private void CameraRotation() {
+        if (_input.look.sqrMagnitude >= _threshold) {
+            _targetYaw += _input.look.x * _mouseSensitive;
+            _targetPitch -= _input.look.y * _mouseSensitive;
+        }
 
-		_cameraRoot.rotation = Quaternion.Euler(_targetPitch, _targetYaw, 0.0f);
-	}
-	private void Move() {
-		float targetSpeed = _input.sprint ? SprintSpeed : MoveSpeed;
-		if (_input.move == Vector2.zero) targetSpeed = 0f;
+        if (_targetYaw < -360f) _targetYaw += 360f;
+        if (_targetYaw > 360f) _targetYaw -= 360f;
+        _targetPitch = Mathf.Clamp(_targetPitch, -30f, 70f);
 
-		float currentHorizontalSpeed = new Vector3(_controller.velocity.x, 0.0f, _controller.velocity.z).magnitude;
-		float speedOffset = 0.1f;
+        _cameraRoot.rotation = Quaternion.Euler(_targetPitch, _targetYaw, 0.0f);
+    }
 
-		if (_input.move == Vector2.zero) {
-			// ÁúÁÖ ÁßÀÌ¾ú°í, ¾ÆÁ÷ Á¤Áö ¾Ö´Ï¸ŞÀÌ¼Ç »óÅÂ°¡ ¾Æ´Ò ¶§¸¸ 1È¸ ½ÇÇà
-			if (currentHorizontalSpeed > sprintThreshhold && !_animator.GetCurrentAnimatorStateInfo(0).IsName("RunToStop")) {
-				_animator.SetTrigger(_animIDStop);
-			}
-		} else {
-			// ´Ù½Ã ¿òÁ÷ÀÌ±â ½ÃÀÛÇÏ¸é ½×¿©ÀÖÀ»Áö ¸ğ¸¦ Stop Æ®¸®°Å¸¦ Áï½Ã Á¦°Å (¾û°ÅÁÖÃã ¹æÁö)
-			_animator.ResetTrigger(_animIDStop);
-		}
+    private void Move() {
+        float targetSpeed = _input.sprint ? SprintSpeed : MoveSpeed;
+        bool isMoving = _input.move != Vector2.zero;
 
-		// ¸ØÃâ ¶§(targetSpeed == 0)´Â °¨¼Óµµ¸¦ ³·Ãç¼­ ¹Ì²ô·¯Áö°Ô ÇÏ°í, 
-		// ÀÌµ¿ÇÒ ¶§´Â ¿ø·¡ÀÇ °¡¼Óµµ¸¦ »ç¿ëÇÔ
-		float lerpSpeed = (_input.move == Vector2.zero) ? SpeedChangeRate * 0.5f : SpeedChangeRate;
+        if (!isMoving) targetSpeed = 0f;
 
-		_animationBlend = Mathf.Lerp(_animationBlend, targetSpeed, Time.deltaTime * SpeedChangeRate);
-		if (_animationBlend < 0.01f) _animationBlend = 0f;
+        // --- Stop íŒì • ---
+        // [ì¶”ê°€] ì´ë™ ì¤‘ì´ë‹¤ê°€ ì…ë ¥ì´ ëŠê¸°ë©´ Stop íŠ¸ë¦¬ê±°
+        bool justStopped = !isMoving && _animationBlend > 0.1f && !_isStopping;
+        if (justStopped) {
+            _isStopping = true;
+            if (_animator) {
+                _animator.SetTrigger(_animIDStop);
+            }
+        }
+        // ì†ë„ê°€ ê±°ì˜ 0ì´ ë˜ë©´ Stop ìƒíƒœ í•´ì œ
+        if (_isStopping && _animationBlend < 0.01f) {
+            _isStopping = false;
+        }
 
-		if (currentHorizontalSpeed < targetSpeed - speedOffset ||
-			currentHorizontalSpeed > targetSpeed + speedOffset) {
-			// ¼±ÇüÀûÀÌÁö ¾Ê°í °î¼±ÀûÀÎ °á°ú¸¦ »ı¼ºÇÏ¿© ´õ À¯±âÀûÀÎ ¼Óµµ º¯È­¸¦ Á¦°øÇÔ
-			// Âü°í: LerpÀÇ T´Â Å¬·¥ÇÁ(Àü´ŞµÈ ¹üÀ§ ³»·Î Á¦ÇÑ)µÇ¹Ç·Î ¼Óµµ¸¦ º°µµ·Î Á¦ÇÑÇÒ ÇÊ¿ä ¾øÀ½
-			_speed = Mathf.Lerp(currentHorizontalSpeed, targetSpeed * 1f, Time.deltaTime * lerpSpeed);
-			_speed = Mathf.Round(_speed * 1000f) / 1000f; // ¼Óµµ °ªÀ» ¼Ò¼öÁ¡ ¼ÂÂ° ÀÚ¸®±îÁö ¹İ¿Ã¸²
-		} else {
-			_speed = targetSpeed;
-		}
+        // --- ì†ë„ ë³´ê°„ ---
+        float currentHorizontalSpeed = new Vector3(_controller.velocity.x, 0f, _controller.velocity.z).magnitude;
+        float speedOffset = 0.1f;
 
-		//¾Ö´Ï¸ŞÀÌ¼Ç ºí·£µå °ü·Ã.
+        if (currentHorizontalSpeed < targetSpeed - speedOffset ||
+            currentHorizontalSpeed > targetSpeed + speedOffset) {
+            _speed = Mathf.Lerp(currentHorizontalSpeed, targetSpeed, Time.deltaTime * SpeedChangeRate);
+            _speed = Mathf.Round(_speed * 1000f) / 1000f;
+        } else {
+            _speed = targetSpeed;
+        }
 
+        // ì• ë‹ˆë©”ì´ì…˜ ë¸”ë Œë“œ (Blend Treeìš© Speed íŒŒë¼ë¯¸í„°)
+        _animationBlend = Mathf.Lerp(_animationBlend, targetSpeed, Time.deltaTime * SpeedChangeRate);
+        if (_animationBlend < 0.01f) _animationBlend = 0f;
 
-		//ÀÔ·Â ¹æÇâ Á¤±ÔÈ­
-		Vector3 inputDirection = new Vector3(_input.move.x, 0.0f, _input.move.y).normalized;
-		if (_input.move != Vector2.zero) {
-			_targetRotation = Mathf.Atan2(inputDirection.x, inputDirection.z) * Mathf.Rad2Deg + _mainCamera.transform.eulerAngles.y;
-			float rotation = Mathf.SmoothDampAngle(transform.eulerAngles.y, _targetRotation, ref _rotationVelocity, RotationSmoothTime);
+        // --- íšŒì „ ---
+        Vector3 inputDirection = new Vector3(_input.move.x, 0f, _input.move.y).normalized;
+        if (isMoving) {
+            _targetRotation = Mathf.Atan2(inputDirection.x, inputDirection.z) * Mathf.Rad2Deg
+                              + _mainCamera.transform.eulerAngles.y;
+            float rotation = Mathf.SmoothDampAngle(
+                transform.eulerAngles.y, _targetRotation,
+                ref _rotationVelocity, RotationSmoothTime
+            );
+            transform.rotation = Quaternion.Euler(0f, rotation, 0f);
+        }
 
-			transform.rotation = Quaternion.Euler(0.0f, rotation, 0.0f);
-		}
+        // --- ì‹¤ì œ ì´ë™ ---
+        Vector3 targetDirection = Quaternion.Euler(0f, _targetRotation, 0f) * Vector3.forward;
+        _controller.Move(
+            targetDirection.normalized * (_speed * Time.deltaTime)
+            + new Vector3(0f, _verticalVelocity, 0f) * Time.deltaTime
+        );
 
-		Vector3 targetDirection = Quaternion.Euler(0.0f, _targetRotation, 0.0f) * Vector3.forward;
+        // ì• ë‹ˆë©”ì´í„° ì—…ë°ì´íŠ¸
+        if (_animator) {
+            _animator.SetFloat(_animIDSpeed, _animationBlend);
+        }
+    }
 
-		_controller.Move(targetDirection.normalized * (_speed * Time.deltaTime) + new Vector3(0.0f, _verticalVelocity, 0.0f) * Time.deltaTime);
+    private void JumpAndGravity() {
+        // --- ì í”„ ë²„í¼ ê°±ì‹  ---
+        // [ì¶”ê°€] ì í”„ ì…ë ¥ì´ ë“¤ì–´ì˜¤ë©´ ë²„í¼ íƒ€ì´ë¨¸ ì¶©ì „
+        if (_input.jump) {
+            _jumpBufferDelta = JumpBufferTime;
+            _input.jump = false; // ì…ë ¥ì€ ë²„í¼ì— ìœ„ì„í•˜ê³  ì¦‰ì‹œ ì†Œë¹„
+        }
+        if (_jumpBufferDelta > 0f) {
+            _jumpBufferDelta -= Time.deltaTime;
+        }
 
-		//¾Ö´Ï¸ŞÀÌ¼Ç ¾÷µ¥ÀÌÆ®
-		if (_animator) {
-			_animator.SetFloat(_animIDSpeed, _animationBlend);
-		}
-	}
-	private void JumpAndGravity() {
-		if (Grounded) {
-			_fallTimeoutDelta = FallTimeout;    //Ãß¶ô Å¸ÀÓ¾Æ¿ô Å¸ÀÌ¸Ó ÃÊ±âÈ­.
+        if (Grounded) {
+            // --- ì°©ì§€ ì²˜ë¦¬ ---
+            if (_animator) {
+                _animator.SetBool(_animIDJump, false);
+                _animator.SetBool(_animIDFreeFall, false);
+            }
 
-			//¾Ö´Ï¸ŞÀÌÅÍ ¾÷µ¥ÀÌÆ® (ÃÊ±âÈ­.)
-			if (_animator) {
-				_animator.SetBool(_animIDGrounded, true);
-				_animator.SetBool(_animIDJump, false);
-				// _animator.SetBool(_animIDFreeFall, false); // ÇÊ¿ä ½Ã
-			}
+            if (_verticalVelocity < 0f) {
+                _verticalVelocity = -2f; // ì§€ë©´ì— ì‚´ì§ ëˆŒëŸ¬ì¤˜ì•¼ GroundedCheckê°€ ì•ˆì •ì 
+            }
 
-			if (_verticalVelocity < 0.0f) {
-				_verticalVelocity = -2f;
-			}
+            // --- ì í”„ (ë²„í¼ í™œìš©) ---
+            // [ìˆ˜ì •] _input.jump ëŒ€ì‹  ë²„í¼ íƒ€ì´ë¨¸ë¡œ íŒì •
+            if (_jumpBufferDelta > 0f && _jumpTimeoutDelta <= 0f) {
+                _verticalVelocity = Mathf.Sqrt(JumpHeight * -2f * Gravity);
+                _jumpBufferDelta = 0f; // ë²„í¼ ì†Œë¹„
 
-			if (_input.jump && _jumpTimeoutDelta <= 0.0f) {
-				_verticalVelocity = Mathf.Sqrt(JumpHeight * -2f * Gravity);
-				//¿¡´Ï¸ŞÀÌÅÍ ¾÷µ¥ÀÌÆ® (Á¡ÇÁ)
-				if (_animator) {
-					_animator.SetBool(_animIDJump, true); // Jump ½ÃÀÛ
-					_animator.ResetTrigger(_animIDStop);  // ¸ØÃã Æ®¸®°Å ¸®¼Â
-				}
-			}
+                if (_animator) {
+                    _animator.SetBool(_animIDJump, true);
+                    _animator.ResetTrigger(_animIDStop);
+                }
+            }
 
-			if (_jumpTimeoutDelta >= 0.0f) {
-				_jumpTimeoutDelta -= Time.deltaTime;
-			}
-		} else {
-			_jumpTimeoutDelta = JumpTimeout;
+            if (_jumpTimeoutDelta >= 0f) {
+                _jumpTimeoutDelta -= Time.deltaTime;
+            }
 
-			if (_fallTimeoutDelta >= 0.0f) {
-				_fallTimeoutDelta -= Time.deltaTime;
-			} else {
-				//¾Ö´Ï¸ŞÀÌÅÍ ¾÷µ¥ÀÌÆ® (Ãß¶ô ¾Ö´Ï¸ŞÀÌ¼Ç)
-				if (_animator) {
-					_animator.SetBool(_animIDGrounded, false);
-				}
-			}
+        } else {
+            // --- ê³µì¤‘ ì²˜ë¦¬ ---
+            _jumpTimeoutDelta = JumpTimeout;
 
-			_input.jump = false;    //Áö¸é¿¡ ÀÖÁö ¾Ê´Â »óÅÂÀÌ¹Ç·Î Á¡ÇÁ ÀÔ·Â ÇØÁ¦.
-		}
+            // [ìˆ˜ì •] FallTimeout ì œê±° â†’ ê³µì¤‘ì´ê³  í•˜ê°• ì¤‘ì´ë©´ ì¦‰ì‹œ FreeFall
+            if (_animator && _verticalVelocity < 0f) {
+                _animator.SetBool(_animIDFreeFall, true);
+            }
+        }
 
-		// Á¾´Ü ¼Óµµ(terminal velocity)º¸´Ù ³·À¸¸é ½Ã°£¿¡ µû¶ó Áß·Â Àû¿ë
-		// (µ¨Å¸ Å¸ÀÓÀ» µÎ ¹ø °öÇÏ¿© ½Ã°£¿¡ µû¶ó ¼±ÇüÀûÀ¸·Î °¡¼Ó)
-		if (_verticalVelocity < _terminalVelocity) {
-			_verticalVelocity += Gravity * Time.deltaTime;
-		}
-	}
+        // --- ì¤‘ë ¥ ì ìš© ---
+        if (_verticalVelocity < _terminalVelocity) {
+            // [ì¶”ê°€] Fall Multiplier: í•˜ê°• ì‹œ ì¤‘ë ¥ ì¶”ê°€ ë°°ìœ¨ ì ìš©
+            float gravityScale = _verticalVelocity < 0f ? FallMultiplier : 1.0f;
+            _verticalVelocity += Gravity * gravityScale * Time.deltaTime;
+        }
+    }
 }
