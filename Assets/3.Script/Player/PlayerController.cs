@@ -1,246 +1,164 @@
-ï»¿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using Unity.Cinemachine;
 
+[RequireComponent(typeof(CharacterController))]
 public class PlayerController : MonoBehaviour {
-    [Header("í”Œë ˆì´ì–´ ì´ë™")]
-    public float MoveSpeed = 2.0f;
-    public float SprintSpeed = 6.0f;
-    public float SpeedChangeRate = 15.0f;       // [ìˆ˜ì •] 10 â†’ 15, ê°€ì†/ê°ì† ë” ë¹ ë¦¿í•˜ê²Œ
-    public float RotationSmoothTime = 0.06f;    // [ìˆ˜ì •] 0.12 â†’ 0.06, ë°©í–¥ ì „í™˜ ì¦‰ê° ë°˜ì‘
+	[Header("Data")]
+	[SerializeField] private PlayerData data;
 
-    [Header("ì í”„ / ì¤‘ë ¥")]
-    public float JumpHeight = 1.2f;
-    public float JumpTimeout = 0.50f;
-    public float Gravity = -15.0f;
-    public float FallMultiplier = 2.5f;         // [ì¶”ê°€] ë‚™í•˜ ê°€ì† ë°°ìœ¨ (ë¹ ë¦¿í•œ ë‚™í•˜)
+	[Header("Camera")]
+	[SerializeField] private Transform cameraTransform;
 
-    // [ì œê±°] FallTimeout â€” Coyote Time ì—†ì´ ì¦‰ê° FreeFall íŒì •
-    // public float FallTimeout = 0.15f;
+	// -- ÄÄÆ÷³ÍÆ® -------------------------------------
+	public CharacterController CC;
 
-    [Header("ì í”„ ë²„í¼")]
-    public float JumpBufferTime = 0.15f;        // [ì¶”ê°€] ì°©ì§€ ì§ì „ ì í”„ ì…ë ¥ì„ ê¸°ì–µí•˜ëŠ” ì‹œê°„
+	// -- FSM ------------------------------------------
+	public PlayerStateMachine StateMachine { get; private set; }
+	public IdleState IdleState { get; private set; }
+	public RunState RunState { get; private set; }
+	public JumpState JumpState { get; private set; }
+	public FallState FallState { get; private set; }
+	public WallRunState WallRunState{ get; private set; }
+	public LandState LandState { get; private set; }
 
-    [Header("ì§€ë©´ ì²´í¬")]
-    public bool Grounded = true;
-    public float GroundedOffset = -0.14f;
-    public float GroundedRadius = 0.28f;
-    public LayerMask GroundLayers;
+	// -- ÀÔ·Â ------------------------------------------
+	public Vector2 MoveInput { get; private set; }
+	public bool JumpPressed { get; private set; }	//ÀÌ¹ø ÇÁ·¹ÀÓ¸¸ true
 
-    [Header("ì‹œë„¤ë¨¸ì‹  ì¹´ë©”ë¼")]
-    [SerializeField] private Transform _cameraRoot;
-    [SerializeField] private float _mouseSensitive = 1.0f;
+	// -- ¹°¸® »óÅÂ (CharacterController´Â ¼Óµµ¸¦ Á÷Á¢ °ü¸®) --
+	public Vector3 Velocity { get; set; }	//ÇöÀç ¼Óµµ (State¿¡¼­ Á÷Á¢ ¼öÁ¤)
+	public float VerticalSpeed { 
+		get => Velocity.y; 
+		set => Velocity = new Vector3(Velocity.x, value, Velocity.z); 
+	}
 
-    // ì»´í¬ë„ŒíŠ¸
-    private InputController _input;
-    private CharacterController _controller;
-    private GameObject _mainCamera;
-    private Animator _animator;
+	// -- °¨Áö °á°ú -------------------------------------
+	public bool IsGrounded { get; private set; }
+	public bool IsOnWall { get; private set; }
+	public Vector3 WallNormal { get; private set; }
+	public bool IsWallOnRight { get; private set; }
 
-    // ì¹´ë©”ë¼
-    private float _targetYaw;
-    private float _targetPitch;
-    private float _threshold = 0.01f;
+	// -- Å¸ÀÌ¸Ó (Coyote Time / Jump Buffer) ------------
+	public float LastGroundedTime { get; private set; }		//¸¶Áö¸·À¸·Î ¶¥¿¡ ÀÖ´ø ½Ã°£
+	public float LastJumpPressTime { get; private set; }    //¸¶Áö¸· Á¡ÇÁ ÀÔ·Â ½Ã°£
 
-    // ì´ë™
-    private float _speed;
-    private float _animationBlend;
-    private float _targetRotation = 0.0f;
-    private float _rotationVelocity;
-    private float _verticalVelocity;
-    private float _terminalVelocity = 53.0f;
+	// - ÂøÁö ¼Óµµ ±â·Ï ---------------------------------
+	public float LandingSpeed { get; private set; }
 
-    // íƒ€ì´ë¨¸
-    private float _jumpTimeoutDelta;
-    private float _jumpBufferDelta;             // [ì¶”ê°€] ì í”„ ë²„í¼ íƒ€ì´ë¨¸
+	// -- ÂüÁ¶ ------------------------------------------
+	public PlayerData Data => data;
+	public Transform CameraTransform => cameraTransform;
 
-    // ìƒíƒœ
-    private bool _wasGrounded;                  // [ì¶”ê°€] ì´ì „ í”„ë ˆì„ ì§€ë©´ ì—¬ë¶€ (Stop íŒì •ìš©)
-    private bool _isStopping;                   // [ì¶”ê°€] Stop ì• ë‹ˆë©”ì´ì…˜ ì¬ìƒ ì¤‘ ì—¬ë¶€
+	// --------------------------------------------------
+	private void Awake() {
+		TryGetComponent(out CC);
 
-    // ì• ë‹ˆë©”ì´ì…˜ ID
-    private int _animIDSpeed;
-    private int _animIDGrounded;
-    private int _animIDJump;
-    private int _animIDFreeFall;
-    private int _animIDStop;                    // [ìˆ˜ì •] ì´ì œ ì‹¤ì œë¡œ ì‚¬ìš©
+		StateMachine = new PlayerStateMachine();
+		IdleState = new IdleState(this, StateMachine, data);
+		RunState = new RunState(this, StateMachine, data);
+		JumpState = new JumpState(this, StateMachine, data);
+		FallState = new FallState(this, StateMachine, data);
+		WallRunState = new WallRunState(this, StateMachine, data);
+		LandState = new LandState(this, StateMachine, data);
+	}
 
-    private void Awake() {
-        if (_mainCamera == null) {
-            _mainCamera = GameObject.FindGameObjectWithTag("MainCamera");
-        }
-        TryGetComponent(out _input);
-        TryGetComponent(out _controller);
-        TryGetComponent(out _animator);
-    }
+	private void Start() {
+		StateMachine.Initialize(IdleState);
+	}
 
-    private void Start() {
-        AssignAnimationIDs();
-        _jumpTimeoutDelta = JumpTimeout;
-        _jumpBufferDelta = 0f;
-    }
+	private void Update() {
+		StateMachine.CurrentState.Update();
+	}
 
-    private void Update() {
-        GroundedCheck();
-        JumpAndGravity();
-        Move();
-    }
+	private void FixedUpdate() {
+		StateMachine.CurrentState.FixedUpdate();
+	}
 
-    private void LateUpdate() {
-        CameraRotation();
-    }
+	// -- ÀÔ·Â Ã³¸® -------------------------------------
+	private void HandleInput() {
+		MoveInput = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
 
-    private void AssignAnimationIDs() {
-        _animIDSpeed = Animator.StringToHash("Speed");
-        _animIDGrounded = Animator.StringToHash("Grounded");
-        _animIDJump = Animator.StringToHash("Jump");
-        _animIDFreeFall = Animator.StringToHash("FreeFall");
-        _animIDStop = Animator.StringToHash("Stop");
-    }
+		JumpPressed = Input.GetKeyDown(KeyCode.Space);
+		if (JumpPressed) LastJumpPressTime = Time.time;
+	}
 
-    private void GroundedCheck() {
-        _wasGrounded = Grounded; // [ì¶”ê°€] ì´ì „ í”„ë ˆì„ ìƒíƒœ ì €ì¥
+	// -- Áö¸é °¨Áö -------------------------------------
+	private bool wasGrounded;
 
-        Vector3 spherePosition = new Vector3(
-            transform.position.x,
-            transform.position.y - GroundedOffset,
-            transform.position.z
-        );
-        Grounded = Physics.CheckSphere(spherePosition, GroundedRadius, GroundLayers, QueryTriggerInteraction.Ignore);
+	private void CheckGround() {
+		wasGrounded = IsGrounded;
+		IsGrounded = CC.isGrounded;
 
-        if (_animator) {
-            _animator.SetBool(_animIDGrounded, Grounded);
-        }
-    }
+		if (IsGrounded) LastGroundedTime = Time.time;
 
-    private void CameraRotation() {
-        if (_input.look.sqrMagnitude >= _threshold) {
-            _targetYaw += _input.look.x * _mouseSensitive;
-            _targetPitch -= _input.look.y * _mouseSensitive;
-        }
+		//ÂøÁö ¼ø°£ ¼Óµµ ±â·Ï
+		if (IsGrounded && !wasGrounded) LandingSpeed = Velocity.y;
+	}
 
-        if (_targetYaw < -360f) _targetYaw += 360f;
-        if (_targetYaw > 360f) _targetYaw -= 360f;
-        _targetPitch = Mathf.Clamp(_targetPitch, -30f, 70f);
+	// -- º® °¨Áö ---------------------------------------
+	private void CheckWall() {
+		LayerMask wallLayer = LayerMask.GetMask("Wall");
+		bool hitRight = Physics.Raycast(transform.position, transform.right, out RaycastHit rightHit, data.wallDetectDistance, wallLayer);
+		bool hitLeft = Physics.Raycast(transform.position, -transform.right, out RaycastHit leftHit, data.wallDetectDistance, wallLayer);
 
-        _cameraRoot.rotation = Quaternion.Euler(_targetPitch, _targetYaw, 0.0f);
-    }
+		if(hitRight) {
+			IsOnWall = true;
+			WallNormal = rightHit.normal;
+			IsWallOnRight = true;
+		} else if(hitLeft) {
+			IsOnWall = true;
+			WallNormal = leftHit.normal;
+			IsWallOnRight = false;
+		} else {
+			IsOnWall = false;
+		}
+	}
 
-    private void Move() {
-        float targetSpeed = _input.sprint ? SprintSpeed : MoveSpeed;
-        bool isMoving = _input.move != Vector2.zero;
+	// -- Å¸ÀÌ¸Ó °»½Å -----------------------------------
+	private void UpdateTimers() {
+		//Å¸ÀÌ¸Ó´Â ½Ã°£ ±â¸¸ÀÌ¹Ç·Î º°µµ °¨»ê ºÒÇÊ¿ä.
+		//Time.time - LastGroundedTime À¸·Î °æ°ú ½Ã°£ °è»ê
+	}
 
-        if (!isMoving) targetSpeed = 0f;
+	// -- °ø¿ë ÀÌµ¿ °è»ê --------------------------------
+	/// <summary>
+	/// Ä«¸Ş¶ó ¹æÇâ ±âÁØ ¼öÆò ÀÌµ¿ ¼Óµµ¸¦ °è»êÇØ Velocity.xz¿¡ Àû¿ë
+	/// </summary>
+	public void ApplyHorizontalMovement(float targetSpeed, float accel) {
+		//Ä«¸Ş¶ó ±âÁØ ÀÌµ¿ ¹æÇâ
+		Vector3 camForward = Vector3.ProjectOnPlane(cameraTransform.forward, Vector3.up).normalized;
+		Vector3 camRight = Vector3.ProjectOnPlane(cameraTransform.right, Vector3.up).normalized;
 
-        // --- Stop íŒì • ---
-        // [ì¶”ê°€] ì´ë™ ì¤‘ì´ë‹¤ê°€ ì…ë ¥ì´ ëŠê¸°ë©´ Stop íŠ¸ë¦¬ê±°
-        bool justStopped = !isMoving && _animationBlend > 0.1f && !_isStopping;
-        if (justStopped) {
-            _isStopping = true;
-            if (_animator) {
-                _animator.SetTrigger(_animIDStop);
-            }
-        }
-        // ì†ë„ê°€ ê±°ì˜ 0ì´ ë˜ë©´ Stop ìƒíƒœ í•´ì œ
-        if (_isStopping && _animationBlend < 0.01f) {
-            _isStopping = false;
-        }
+		Vector3 moveDir = (camForward * MoveInput.y + camRight * MoveInput.x).normalized;
+		Vector3 targetVel = moveDir * targetSpeed;
 
-        // --- ì†ë„ ë³´ê°„ ---
-        float currentHorizontalSpeed = new Vector3(_controller.velocity.x, 0f, _controller.velocity.z).magnitude;
-        float speedOffset = 0.1f;
+		//ÇöÀç ¼öÆò ¼Óµµ¿¡¼­ ¸ñÇ¥ ¼Óµµ·Î ºÎµå·´°Ô ÀüÈ¯
+		Vector3 currentHorizontal = new Vector3(Velocity.x, 0f, Velocity.z);
+		Vector3 newHorizontal = Vector3.MoveTowards(currentHorizontal, targetVel, accel * Time.deltaTime);
 
-        if (currentHorizontalSpeed < targetSpeed - speedOffset ||
-            currentHorizontalSpeed > targetSpeed + speedOffset) {
-            _speed = Mathf.Lerp(currentHorizontalSpeed, targetSpeed, Time.deltaTime * SpeedChangeRate);
-            _speed = Mathf.Round(_speed * 1000f) / 1000f;
-        } else {
-            _speed = targetSpeed;
-        }
+		Velocity = new Vector3(newHorizontal.x, Velocity.y, newHorizontal.z);
+	}
+	/// <summary>
+	/// Ä¿½ºÅÒ Áß·Â Àû¿ë (CharacterController´Â Áß·Â ¹ÌÆ÷ÇÔ)
+	/// </summary>
+	public void ApplyGravity(float gravityOverride = float.NaN) {
+		if(IsGrounded && Velocity.y < 0f) {
+			Velocity = new Vector3(Velocity.x, -2f, Velocity.z);    //Áö¸é ¹ĞÂø
+			return;
+		}
 
-        // ì• ë‹ˆë©”ì´ì…˜ ë¸”ë Œë“œ (Blend Treeìš© Speed íŒŒë¼ë¯¸í„°)
-        _animationBlend = Mathf.Lerp(_animationBlend, targetSpeed, Time.deltaTime * SpeedChangeRate);
-        if (_animationBlend < 0.01f) _animationBlend = 0f;
+		float g = float.IsNaN(gravityOverride) ? data.gravity : gravityOverride;
 
-        // --- íšŒì „ ---
-        Vector3 inputDirection = new Vector3(_input.move.x, 0f, _input.move.y).normalized;
-        if (isMoving) {
-            _targetRotation = Mathf.Atan2(inputDirection.x, inputDirection.z) * Mathf.Rad2Deg
-                              + _mainCamera.transform.eulerAngles.y;
-            float rotation = Mathf.SmoothDampAngle(
-                transform.eulerAngles.y, _targetRotation,
-                ref _rotationVelocity, RotationSmoothTime
-            );
-            transform.rotation = Quaternion.Euler(0f, rotation, 0f);
-        }
+		//ÇÏ°­ ½Ã fallMultiplier Àû¿ë
+		if (Velocity.y < 0f) {
+			g *= data.fallMultiplier;
+		}
 
-        // --- ì‹¤ì œ ì´ë™ ---
-        Vector3 targetDirection = Quaternion.Euler(0f, _targetRotation, 0f) * Vector3.forward;
-        _controller.Move(
-            targetDirection.normalized * (_speed * Time.deltaTime)
-            + new Vector3(0f, _verticalVelocity, 0f) * Time.deltaTime
-        );
+		VerticalSpeed += g * Time.deltaTime;
+	}
 
-        // ì• ë‹ˆë©”ì´í„° ì—…ë°ì´íŠ¸
-        if (_animator) {
-            _animator.SetFloat(_animIDSpeed, _animationBlend);
-        }
-    }
-
-    private void JumpAndGravity() {
-        // --- ì í”„ ë²„í¼ ê°±ì‹  ---
-        // [ì¶”ê°€] ì í”„ ì…ë ¥ì´ ë“¤ì–´ì˜¤ë©´ ë²„í¼ íƒ€ì´ë¨¸ ì¶©ì „
-        if (_input.jump) {
-            _jumpBufferDelta = JumpBufferTime;
-            _input.jump = false; // ì…ë ¥ì€ ë²„í¼ì— ìœ„ì„í•˜ê³  ì¦‰ì‹œ ì†Œë¹„
-        }
-        if (_jumpBufferDelta > 0f) {
-            _jumpBufferDelta -= Time.deltaTime;
-        }
-
-        if (Grounded) {
-            // --- ì°©ì§€ ì²˜ë¦¬ ---
-            if (_animator) {
-                _animator.SetBool(_animIDJump, false);
-                _animator.SetBool(_animIDFreeFall, false);
-            }
-
-            if (_verticalVelocity < 0f) {
-                _verticalVelocity = -2f; // ì§€ë©´ì— ì‚´ì§ ëˆŒëŸ¬ì¤˜ì•¼ GroundedCheckê°€ ì•ˆì •ì 
-            }
-
-            // --- ì í”„ (ë²„í¼ í™œìš©) ---
-            // [ìˆ˜ì •] _input.jump ëŒ€ì‹  ë²„í¼ íƒ€ì´ë¨¸ë¡œ íŒì •
-            if (_jumpBufferDelta > 0f && _jumpTimeoutDelta <= 0f) {
-                _verticalVelocity = Mathf.Sqrt(JumpHeight * -2f * Gravity);
-                _jumpBufferDelta = 0f; // ë²„í¼ ì†Œë¹„
-
-                if (_animator) {
-                    _animator.SetBool(_animIDJump, true);
-                    _animator.ResetTrigger(_animIDStop);
-                }
-            }
-
-            if (_jumpTimeoutDelta >= 0f) {
-                _jumpTimeoutDelta -= Time.deltaTime;
-            }
-
-        } else {
-            // --- ê³µì¤‘ ì²˜ë¦¬ ---
-            _jumpTimeoutDelta = JumpTimeout;
-
-            // [ìˆ˜ì •] FallTimeout ì œê±° â†’ ê³µì¤‘ì´ê³  í•˜ê°• ì¤‘ì´ë©´ ì¦‰ì‹œ FreeFall
-            if (_animator && _verticalVelocity < 0f) {
-                _animator.SetBool(_animIDFreeFall, true);
-            }
-        }
-
-        // --- ì¤‘ë ¥ ì ìš© ---
-        if (_verticalVelocity < _terminalVelocity) {
-            // [ì¶”ê°€] Fall Multiplier: í•˜ê°• ì‹œ ì¤‘ë ¥ ì¶”ê°€ ë°°ìœ¨ ì ìš©
-            float gravityScale = _verticalVelocity < 0f ? FallMultiplier : 1.0f;
-            _verticalVelocity += Gravity * gravityScale * Time.deltaTime;
-        }
-    }
+	// -- Coyote / Buffer ÇïÆÛ --------------------------
+	public bool CoyoteTimeValid => (Time.time - LastGroundedTime) < data.coyoteTime;
+	public bool JumpBufferValid => (Time.time - LastJumpPressTime) < data.jumpBufferTime;
 }

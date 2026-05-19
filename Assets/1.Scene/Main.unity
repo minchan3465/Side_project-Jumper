@@ -1375,7 +1375,6 @@ GameObject:
   - component: {fileID: 5866666020791880020}
   - component: {fileID: 5866666020791880023}
   - component: {fileID: 5866666020791880022}
-  - component: {fileID: 5866666020791880021}
   - component: {fileID: 1122448583}
   m_Layer: 6
   m_Name: Player
@@ -2423,35 +2422,6 @@ Animator:
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorStateOnDisable: 0
   m_WriteDefaultValuesOnDisable: 0
---- !u!114 &5866666020791880021
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 919132148129728916}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 9ef02d5880406f74682fcf8cfa0416b8, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::PlayerController
-  MoveSpeed: 4
-  SprintSpeed: 8
-  SpeedChangeRate: 10
-  RotationSmoothTime: 0.12
-  JumpHeight: 1.5
-  JumpTimeout: 0.5
-  Gravity: -15
-  FallMultiplier: 2.5
-  JumpBufferTime: 0.15
-  Grounded: 1
-  GroundedOffset: -0.14
-  GroundedRadius: 0.28
-  GroundLayers:
-    serializedVersion: 2
-    m_Bits: 1
-  _cameraRoot: {fileID: 2036172755}
-  _mouseSensitive: 0.25
 --- !u!114 &5866666020791880022
 MonoBehaviour:
   m_ObjectHideFlags: 0
