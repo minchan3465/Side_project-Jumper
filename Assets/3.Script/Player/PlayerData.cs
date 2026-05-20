@@ -6,6 +6,7 @@ using UnityEngine;
 public class PlayerData : ScriptableObject {
 	[Header("Movement")]
 	public float moveSpeed = 7f;
+	public float sprintSpeed = 11f;
 	public float accleration = 15f; //지면 가속도
 	public float deceleration = 20f;    //지면 감속도
 	public float airAcceleration = 5f;  //공중 가속도 (제한적 제어)

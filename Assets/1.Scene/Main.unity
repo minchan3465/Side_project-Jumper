@@ -913,7 +913,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Unity.InputSystem::UnityEngine.InputSystem.PlayerInput
   m_Actions: {fileID: -944628639613478452, guid: 2f9f321b1ce7a63429aa10faecf8c212, type: 3}
-  m_NotificationBehavior: 0
+  m_NotificationBehavior: 2
   m_UIInputModule: {fileID: 0}
   m_DeviceLostEvent:
     m_PersistentCalls:
@@ -927,8 +927,8 @@ MonoBehaviour:
   m_ActionEvents:
   - m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 5866666020791880022}
-        m_TargetAssemblyTypeName: InputController, Assembly-CSharp
+      - m_Target: {fileID: 5866666020791880026}
+        m_TargetAssemblyTypeName: PlayerInputHandler, Assembly-CSharp
         m_MethodName: OnMove
         m_Mode: 0
         m_Arguments:
@@ -943,9 +943,9 @@ MonoBehaviour:
     m_ActionName: 'Player/Move[/Keyboard/w,/Keyboard/s,/Keyboard/a,/Keyboard/d]'
   - m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 5866666020791880022}
-        m_TargetAssemblyTypeName: InputController, Assembly-CSharp
-        m_MethodName: OnLook
+      - m_Target: {fileID: 5866666020791880026}
+        m_TargetAssemblyTypeName: PlayerInputHandler, Assembly-CSharp
+        m_MethodName: OnJump
         m_Mode: 0
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
@@ -959,9 +959,9 @@ MonoBehaviour:
     m_ActionName: 'Player/Look[/Mouse/delta]'
   - m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 5866666020791880022}
+      - m_Target: {fileID: 5866666020791880026}
         m_TargetAssemblyTypeName: InputController, Assembly-CSharp
-        m_MethodName: OnJump
+        m_MethodName: 
         m_Mode: 0
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
@@ -975,9 +975,9 @@ MonoBehaviour:
     m_ActionName: 'Player/Jump[/Keyboard/space]'
   - m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 5866666020791880022}
+      - m_Target: {fileID: 5866666020791880026}
         m_TargetAssemblyTypeName: InputController, Assembly-CSharp
-        m_MethodName: OnSprint
+        m_MethodName: 
         m_Mode: 0
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
@@ -1374,8 +1374,10 @@ GameObject:
   - component: {fileID: 543450652586169134}
   - component: {fileID: 5866666020791880020}
   - component: {fileID: 5866666020791880023}
-  - component: {fileID: 5866666020791880022}
   - component: {fileID: 1122448583}
+  - component: {fileID: 5866666020791880026}
+  - component: {fileID: 5866666020791880025}
+  - component: {fileID: 5866666020791880024}
   m_Layer: 6
   m_Name: Player
   m_TagString: Untagged
@@ -2422,23 +2424,6 @@ Animator:
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorStateOnDisable: 0
   m_WriteDefaultValuesOnDisable: 0
---- !u!114 &5866666020791880022
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 919132148129728916}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 579a62b94fdf7ed4cba39933cf6703fb, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::InputController
-  move: {x: 0, y: 0}
-  look: {x: 0, y: 0}
-  jump: 0
-  sprint: 0
-  cursorLocked: 1
 --- !u!143 &5866666020791880023
 CharacterController:
   m_ObjectHideFlags: 0
@@ -2464,6 +2449,54 @@ CharacterController:
   m_SkinWidth: 0.02
   m_MinMoveDistance: 0
   m_Center: {x: 0, y: 0.93, z: 0}
+--- !u!114 &5866666020791880024
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 919132148129728916}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 834017bb10f4b5140a49680e51d8736a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CameraController
+  cameraTarget: {fileID: 2036172755}
+  cmCaemra: {fileID: 676826036}
+  sensitivityX: 0.15
+  sensitivityY: 0.15
+  verticalMin: -80
+  verticalMax: 80
+  tiltAngle: 12
+  tiltSpeed: 8
+--- !u!114 &5866666020791880025
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 919132148129728916}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9ef02d5880406f74682fcf8cfa0416b8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerController
+  data: {fileID: 11400000, guid: f5281728b41811242b8367694f8512cb, type: 2}
+  cameraTransform: {fileID: 676826037}
+  CC: {fileID: 5866666020791880023}
+  Input: {fileID: 5866666020791880026}
+--- !u!114 &5866666020791880026
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 919132148129728916}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cdac3dcde734bb4449f8ddcbcef8be24, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerInputHandler
 --- !u!4 &6010502898098908588
 Transform:
   m_ObjectHideFlags: 0

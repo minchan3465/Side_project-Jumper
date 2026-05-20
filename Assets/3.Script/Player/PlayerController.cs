@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 [RequireComponent(typeof(CharacterController))]
+[RequireComponent(typeof(PlayerInputHandler))]
 public class PlayerController : MonoBehaviour {
 	[Header("Data")]
 	[SerializeField] private PlayerData data;
@@ -12,19 +13,17 @@ public class PlayerController : MonoBehaviour {
 
 	// -- 컴포넌트 -------------------------------------
 	public CharacterController CC;
+	public PlayerInputHandler Input;
 
 	// -- FSM ------------------------------------------
 	public PlayerStateMachine StateMachine { get; private set; }
 	public IdleState IdleState { get; private set; }
 	public RunState RunState { get; private set; }
+	public SprintState SprintState { get; private set; }
 	public JumpState JumpState { get; private set; }
 	public FallState FallState { get; private set; }
-	public WallRunState WallRunState{ get; private set; }
+	public WallRunState WallRunState { get; private set; }
 	public LandState LandState { get; private set; }
-
-	// -- 입력 ------------------------------------------
-	public Vector2 MoveInput { get; private set; }
-	public bool JumpPressed { get; private set; }	//이번 프레임만 true
 
 	// -- 물리 상태 (CharacterController는 속도를 직접 관리) --
 	public Vector3 Velocity { get; set; }	//현재 속도 (State에서 직접 수정)
@@ -49,14 +48,19 @@ public class PlayerController : MonoBehaviour {
 	// -- 참조 ------------------------------------------
 	public PlayerData Data => data;
 	public Transform CameraTransform => cameraTransform;
+	public bool CoyoteTimeValid => (Time.time - LastGroundedTime) < data.coyoteTime;
+	public bool JumpBufferValid => (Time.time - LastJumpPressTime) < data.jumpBufferTime;
 
+	private bool wasGrounded;
 	// --------------------------------------------------
 	private void Awake() {
 		TryGetComponent(out CC);
+		TryGetComponent(out Input);
 
 		StateMachine = new PlayerStateMachine();
 		IdleState = new IdleState(this, StateMachine, data);
 		RunState = new RunState(this, StateMachine, data);
+		SprintState = new SprintState(this, StateMachine, data);
 		JumpState = new JumpState(this, StateMachine, data);
 		FallState = new FallState(this, StateMachine, data);
 		WallRunState = new WallRunState(this, StateMachine, data);
@@ -68,32 +72,32 @@ public class PlayerController : MonoBehaviour {
 	}
 
 	private void Update() {
+		// Jump Buffer 타이머 갱식
+		if (Input.JumpPressed)
+			LastJumpPressTime = Time.time;
+
+		CheckGround();
+		CheckWall();
 		StateMachine.CurrentState.Update();
+
+		CC.Move(Velocity * Time.deltaTime);
 	}
 
 	private void FixedUpdate() {
 		StateMachine.CurrentState.FixedUpdate();
 	}
 
-	// -- 입력 처리 -------------------------------------
-	private void HandleInput() {
-		MoveInput = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
-
-		JumpPressed = Input.GetKeyDown(KeyCode.Space);
-		if (JumpPressed) LastJumpPressTime = Time.time;
-	}
-
 	// -- 지면 감지 -------------------------------------
-	private bool wasGrounded;
-
 	private void CheckGround() {
 		wasGrounded = IsGrounded;
 		IsGrounded = CC.isGrounded;
 
-		if (IsGrounded) LastGroundedTime = Time.time;
+		if (IsGrounded) 
+			LastGroundedTime = Time.time;
 
 		//착지 순간 속도 기록
-		if (IsGrounded && !wasGrounded) LandingSpeed = Velocity.y;
+		if (IsGrounded && !wasGrounded) 
+			LandingSpeed = Velocity.y;
 	}
 
 	// -- 벽 감지 ---------------------------------------
@@ -115,12 +119,6 @@ public class PlayerController : MonoBehaviour {
 		}
 	}
 
-	// -- 타이머 갱신 -----------------------------------
-	private void UpdateTimers() {
-		//타이머는 시간 기만이므로 별도 감산 불필요.
-		//Time.time - LastGroundedTime 으로 경과 시간 계산
-	}
-
 	// -- 공용 이동 계산 --------------------------------
 	/// <summary>
 	/// 카메라 방향 기준 수평 이동 속도를 계산해 Velocity.xz에 적용
@@ -130,7 +128,8 @@ public class PlayerController : MonoBehaviour {
 		Vector3 camForward = Vector3.ProjectOnPlane(cameraTransform.forward, Vector3.up).normalized;
 		Vector3 camRight = Vector3.ProjectOnPlane(cameraTransform.right, Vector3.up).normalized;
 
-		Vector3 moveDir = (camForward * MoveInput.y + camRight * MoveInput.x).normalized;
+		Vector2 moveInput = Input.MoveInput;
+		Vector3 moveDir = (camForward * moveInput.y + camRight * moveInput.x).normalized;
 		Vector3 targetVel = moveDir * targetSpeed;
 
 		//현재 수평 속도에서 목표 속도로 부드럽게 전환
@@ -151,14 +150,9 @@ public class PlayerController : MonoBehaviour {
 		float g = float.IsNaN(gravityOverride) ? data.gravity : gravityOverride;
 
 		//하강 시 fallMultiplier 적용
-		if (Velocity.y < 0f) {
+		if (Velocity.y < 0f) 
 			g *= data.fallMultiplier;
-		}
 
 		VerticalSpeed += g * Time.deltaTime;
 	}
-
-	// -- Coyote / Buffer 헬퍼 --------------------------
-	public bool CoyoteTimeValid => (Time.time - LastGroundedTime) < data.coyoteTime;
-	public bool JumpBufferValid => (Time.time - LastJumpPressTime) < data.jumpBufferTime;
 }

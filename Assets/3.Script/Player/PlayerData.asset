@@ -1,0 +1,33 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0bd6383ae9fc312498ad13324adf6aff, type: 3}
+  m_Name: PlayerData
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerData
+  moveSpeed: 7
+  sprintSpeed: 11
+  accleration: 15
+  deceleration: 20
+  airAcceleration: 5
+  jumpHeight: 2.5
+  gravity: -20
+  fallMultiplier: 1.8
+  jumpBufferTime: 0.15
+  coyoteTime: 0.12
+  wallRunSpeed: 8
+  wallRunGravity: -3
+  wallRunDuration: 2
+  wallJumpForceUp: 10
+  wallJumpForceAway: 6
+  wallDetectDistance: 0.6
+  wallRunMinSpeed: 3
+  hardLandThreshold: -10
+  hardLandDuration: 0.3
