@@ -61,12 +61,12 @@ public class RunState : PlayerState {
 			return;
 		}
 
-		if(player.IsOnWall && !player.IsGrounded && player.Input.MoveInput.magnitude > 0.1f) {
+		if (player.IsOnWall && player.IsNewWall && !player.IsGrounded && player.Input.MoveInput.magnitude > 0.1f) {
 			stateMachine.ChangeState(player.WallRunState);
 			return;
 		}
 
-		if(!player.IsGrounded && !player.CoyoteTimeValid) {
+		if (!player.IsGrounded && !player.CoyoteTimeValid) {
 			stateMachine.ChangeState(player.FallState);
 		}
 	}
@@ -96,7 +96,7 @@ public class SprintState : PlayerState {
 			return;
 		}
 
-		if (player.IsOnWall && !player.IsGrounded) {
+		if (player.IsOnWall && player.IsNewWall && !player.IsGrounded) {
 			stateMachine.ChangeState(player.WallRunState);
 			return;
 		}
@@ -124,16 +124,16 @@ public class SprintState : PlayerState {
 
 	public override void Update() {
 		player.ApplyGravity();
-		player.ApplyHorizontalMovement(data.moveSpeed, data.airAcceleration);
+		player.ApplyHorizontalMovement(data.moveSpeed, data.airControl);
 
 		//벽 달리기 진입
-		if(player.IsOnWall && !player.IsGrounded) {
+		if (player.IsOnWall && player.IsNewWall && !player.IsGrounded) {
 			stateMachine.ChangeState(player.WallRunState);
 			return;
 		}
 
 		//정점 이후 -> Fall
-		if(player.Velocity.y <0f) {
+		if (player.Velocity.y <0f) {
 			stateMachine.ChangeState(player.FallState);
 			return;
 		}
@@ -153,19 +153,19 @@ public class FallState : PlayerState {
 
 	public override void Update() {
 		player.ApplyGravity();
-		player.ApplyHorizontalMovement(data.moveSpeed, data.airAcceleration);
+		player.ApplyHorizontalMovement(data.moveSpeed, data.airControl);
 
 		//Jump Buffer로 착지 직전 점프 선입력 허용
 		// -> LandState에서 Buffer 확인 후 JumpState로 전환
 
 		//벽달리기
-		if(player.IsOnWall && player.Input.MoveInput.magnitude > 0.1f) {
+		bool fallingTooFast = player.Velocity.y < data.wallRunMaxFallEntry;
+		if (player.IsOnWall && player.IsNewWall && player.Input.MoveInput.magnitude > 0.1f && !fallingTooFast) {
 			stateMachine.ChangeState(player.WallRunState);
 			return;
 		}
-
 		//착지
-		if(player.IsGrounded) {
+		if (player.IsGrounded) {
 			stateMachine.ChangeState(player.LandState);
 		}
 	}
@@ -177,34 +177,40 @@ public class FallState : PlayerState {
 public class LandState : PlayerState {
 	private float landTimer;
 	private bool isHardLand;
+	private bool skipFrame;   // Enter()에서 바로 전환하면 FSM 불안정 -> 1프레임 대기
 
 	public LandState(PlayerController p, PlayerStateMachine sm, PlayerData d) : base(p, sm, d) { }
 
 	public override void Enter() {
 		isHardLand = player.LandingSpeed < data.hardLandThreshold;
 		landTimer = isHardLand ? data.hardLandDuration : 0f;
-
-		//Jump Buffer가 있으면 경직 없이 바로 점프
-		if(!isHardLand && player.JumpBufferValid) {
-			stateMachine.ChangeState(player.JumpState);
-		}
+		skipFrame = true;  // 첫 Update에서 처리
 	}
 
 	public override void Update() {
 		player.ApplyGravity();
-		player.ApplyHorizontalMovement(0f, data.deceleration);
 
-		landTimer -= Time.deltaTime;
-
-		if (landTimer <= 0f) {
-			// 경직 종료 후 상태 전환
-			if (player.JumpBufferValid)
-				stateMachine.ChangeState(player.JumpState);
-			else if (player.Input.MoveInput.magnitude > 0.1f)
-				stateMachine.ChangeState(player.RunState);
-			else
-				stateMachine.ChangeState(player.IdleState);
+		//일반 착지 (감속 없음)
+		if (!isHardLand) {
+			if (skipFrame) { skipFrame = false; return; }
+			TransitionFromLand();
+			return;
 		}
+
+		//하드 착지 (경직 적용 및 감속)
+		player.ApplyHorizontalMovement(0f, data.groundFriction);
+		landTimer -= Time.deltaTime;
+		if (landTimer <= 0f)
+			TransitionFromLand();
+	}
+
+	private void TransitionFromLand() {
+		if (player.JumpBufferValid)
+			stateMachine.ChangeState(player.JumpState);
+		else if (player.Input.MoveInput.magnitude > 0.1f)
+			stateMachine.ChangeState(player.Input.SprintHeld ? player.SprintState : player.RunState);
+		else
+			stateMachine.ChangeState(player.IdleState);
 	}
 }
 
@@ -219,20 +225,29 @@ public class WallRunState : PlayerState {
 	public override void Enter() {
 		wallRunTimer = data.wallRunDuration;
 
-		// 수직 속도 리셋 (벽에 붙는 느낌)
-		player.VerticalSpeed = 0f;
+		// 현재 벽을 등록 → 같은 벽 재진입 차단
+		player.RegisterLastWall();
+
+		// 수직 속도를 0으로 즉시 끊지 않고, 위로 살짝 밀어줌 (미러스 엣지: 진입 시 상승감)
+		player.VerticalSpeed = Mathf.Max(player.VerticalSpeed, 0f) + data.wallRunEntryLiftSpeed;
+
+		// 진입 순간 수평 속도 부스트 (벽 방향 기준)
+		Vector3 wallForward = Vector3.Cross(player.WallNormal, Vector3.up);
+		if (Vector3.Dot(wallForward, player.CameraTransform.forward) < 0f)
+			wallForward = -wallForward;
+
+		Vector3 currentH = new Vector3(player.Velocity.x, 0f, player.Velocity.z);
+		Vector3 boosted = currentH + wallForward * data.wallRunEntryBoost;
+
+		// 최대속도 캡 (wallRunSpeed + boost만큼)
+		if (boosted.magnitude > data.wallRunSpeed + data.wallRunEntryBoost)
+			boosted = boosted.normalized * (data.wallRunSpeed + data.wallRunEntryBoost);
+
+		player.Velocity = new Vector3(boosted.x, player.VerticalSpeed, boosted.z);
 	}
 
 	public override void Update() {
 		wallRunTimer -= Time.deltaTime;
-
-		ApplyWallRunMovement();
-
-		//벽 점프
-		if(player.Input.JumpPressed) {
-			WallJump();
-			return;
-		}
 
 		//종료 조건
 		bool tooSlow = new Vector3(player.Velocity.x, 0f, player.Velocity.z).magnitude < data.wallRunMinSpeed;
@@ -240,10 +255,19 @@ public class WallRunState : PlayerState {
 			stateMachine.ChangeState(player.FallState);
 			return;
 		}
-
+ 
 		if (player.IsGrounded) {
 			stateMachine.ChangeState(player.LandState);
+			return;
 		}
+ 
+		// 벽 점프
+		if(player.Input.JumpPressed) {
+			WallJump();
+			return;
+		}
+ 
+		ApplyWallRunMovement();
 	}
 
 	private void ApplyWallRunMovement() {
@@ -255,20 +279,29 @@ public class WallRunState : PlayerState {
 			wallForward = -wallForward;
 
 		//수평은 벽 방향 고정 속도, 수직은 약한 중력
-		Vector3 targetVel = wallForward * data.wallRunSpeed;
-		player.Velocity = new Vector3(targetVel.x, player.Velocity.y, targetVel.z);
+		Vector3 currentHorizontal = new Vector3(player.Velocity.x, 0f, player.Velocity.z);
+		Vector3 targetHorizontal = wallForward * data.wallRunSpeed;
+		float t = 1f - Mathf.Exp(-data.wallRunAcceleration * Time.deltaTime);
+		Vector3 newHorizontal = Vector3.Lerp(currentHorizontal, targetHorizontal, t);
+
+		player.Velocity = new Vector3(newHorizontal.x, player.Velocity.y, newHorizontal.z);
 
 		//약간 하강 중력
 		player.VerticalSpeed += data.wallRunGravity * Time.deltaTime;
 
-		//벽족으로 살짝 당겨주기 (떨어지지 않도록)
-		player.Velocity += -player.WallNormal * 2f;
+		// 벽 밀착: Velocity가 아닌 CC.Move에 추가 이동으로 처리
+		// (Velocity 오염 방지 - 별도 stickyForce로 CC.Move 호출_
+		// 여기서는 WallNormal 반대 방향으로 작은 힘을 수직속도와 무관하게 추가
+		player.Velocity += -player.WallNormal * data.wallStickForce * Time.deltaTime;
 	}
 
 	private void WallJump() {
+		//쿨다운 시작 -> 벽 재진입 방지
+		player.StartWallJumpCooldown();
+
 		//벽 법선 방향 + 위쪽으로 튕겨나감
 		Vector3 jumpDir = (player.WallNormal + Vector3.up).normalized;
-		player.Velocity = new Vector3(jumpDir.x * data.wallJumpForceAway, data.wallJumpForceUp, jumpDir.x * data.wallJumpForceAway);
+		player.Velocity = new Vector3(jumpDir.x * data.wallJumpForceAway, data.wallJumpForceUp, jumpDir.z * data.wallJumpForceAway);
 
 		stateMachine.ChangeState(player.JumpState);
 	}

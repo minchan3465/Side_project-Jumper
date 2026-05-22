@@ -17,17 +17,22 @@ MonoBehaviour:
   accleration: 15
   deceleration: 20
   airAcceleration: 5
+  groundFriction: 18
   jumpHeight: 2.5
-  gravity: -20
-  fallMultiplier: 1.8
+  gravity: -14
+  fallMultiplier: 1.4
   jumpBufferTime: 0.15
   coyoteTime: 0.12
   wallRunSpeed: 8
   wallRunGravity: -3
-  wallRunDuration: 2
+  wallRunDuration: 0.8
+  wallRunEntryBoost: 3
+  wallRunEntryLiftSpeed: 2
   wallJumpForceUp: 10
   wallJumpForceAway: 6
-  wallDetectDistance: 0.6
-  wallRunMinSpeed: 3
+  wallDetectDistance: 0.33
+  wallRunMinSpeed: 4
+  wallRunAcceleration: 12
+  wallStickForce: 15
   hardLandThreshold: -10
   hardLandDuration: 0.3

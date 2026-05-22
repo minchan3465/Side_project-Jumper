@@ -42,16 +42,28 @@ public class PlayerController : MonoBehaviour {
 	public float LastGroundedTime { get; private set; }		//마지막으로 땅에 있던 시간
 	public float LastJumpPressTime { get; private set; }    //마지막 점프 입력 시간
 
-	// - 착지 속도 기록 ---------------------------------
+	// -- 착지 속도 기록 --------------------------------
 	public float LandingSpeed { get; private set; }
+
+	// -- 벽 점프 쿨다운 (재진입 방지) ------------------
+	public bool WallJumpCooldown { get; set; }
+	private float wallJumpCooldownTimer = 0f;
+	private const float WALL_JUMP_COOLDOWN = 0.4f;
+
+	// 마지막으로 달린 벽 기억 (같은 벽 재진입 방지)
+	private Collider lastWallCollider = null;
+	public Collider CurrentWallCollider { get; private set; }
 
 	// -- 참조 ------------------------------------------
 	public PlayerData Data => data;
 	public Transform CameraTransform => cameraTransform;
 	public bool CoyoteTimeValid => (Time.time - LastGroundedTime) < data.coyoteTime;
 	public bool JumpBufferValid => (Time.time - LastJumpPressTime) < data.jumpBufferTime;
+	public bool IsNewWall => CurrentWallCollider != null && CurrentWallCollider != lastWallCollider;
 
 	private bool wasGrounded;
+	private float prevVerticalSpeed; // CC.Move 직전 수직 속도 보존
+
 	// --------------------------------------------------
 	private void Awake() {
 		TryGetComponent(out CC);
@@ -76,11 +88,25 @@ public class PlayerController : MonoBehaviour {
 		if (Input.JumpPressed)
 			LastJumpPressTime = Time.time;
 
-		CheckGround();
-		CheckWall();
+		// 벽 점프 쿨다운 타이머
+		if (WallJumpCooldown) {
+			wallJumpCooldownTimer -= Time.deltaTime;
+			if (wallJumpCooldownTimer <= 0f)
+				WallJumpCooldown = false;
+		}
+
 		StateMachine.CurrentState.Update();
 
+		// CC.Move 직전 수직 속도 저장 (착지 판별용)
+		prevVerticalSpeed = Velocity.y;
+
+		// [핵심] Move 먼저 -> 그 다음 프레임에서 isGrounded가 정확히 갱신됨
 		CC.Move(Velocity * Time.deltaTime);
+
+		// Move 이후 감지 (CC.isGrounded가 Move 후 갱신됨)
+		CheckGround();
+		CheckWall();
+
 	}
 
 	private void FixedUpdate() {
@@ -96,27 +122,48 @@ public class PlayerController : MonoBehaviour {
 			LastGroundedTime = Time.time;
 
 		//착지 순간 속도 기록
-		if (IsGrounded && !wasGrounded) 
-			LandingSpeed = Velocity.y;
+		if (IsGrounded && !wasGrounded) {
+			LandingSpeed = prevVerticalSpeed;   //Move 이전 낙하 속도 사용
+			lastWallCollider = null;
+		}
 	}
 
 	// -- 벽 감지 ---------------------------------------
 	private void CheckWall() {
-		LayerMask wallLayer = LayerMask.GetMask("Wall");
-		bool hitRight = Physics.Raycast(transform.position, transform.right, out RaycastHit rightHit, data.wallDetectDistance, wallLayer);
-		bool hitLeft = Physics.Raycast(transform.position, -transform.right, out RaycastHit leftHit, data.wallDetectDistance, wallLayer);
+		if (WallJumpCooldown) {
+			IsOnWall = false;
+			return;
+		}
 
-		if(hitRight) {
+		// Raycast 시작점을 허리 높이로 올려 큐브 상단면 오감지 방지 (Bug 5)
+		Vector3 rayOrigin = transform.position + Vector3.up * (CC.height * 0.5f);
+		LayerMask wallLayer = LayerMask.GetMask("Wall");
+		bool hitRight = Physics.Raycast(rayOrigin, transform.right, out RaycastHit rightHit, data.wallDetectDistance, wallLayer);
+		bool hitLeft = Physics.Raycast(rayOrigin, -transform.right, out RaycastHit leftHit, data.wallDetectDistance, wallLayer);
+
+		if (hitRight) {
+			CurrentWallCollider = rightHit.collider;
 			IsOnWall = true;
 			WallNormal = rightHit.normal;
 			IsWallOnRight = true;
-		} else if(hitLeft) {
+		} else if (hitLeft) {
+			CurrentWallCollider = leftHit.collider;
 			IsOnWall = true;
 			WallNormal = leftHit.normal;
 			IsWallOnRight = false;
 		} else {
 			IsOnWall = false;
+			CurrentWallCollider = null;
 		}
+	}
+
+	// -- 벽 점프 쿨다운 시작 (WallRunState에서 호출) ---
+	public void StartWallJumpCooldown() {
+		WallJumpCooldown = true;
+		wallJumpCooldownTimer = WALL_JUMP_COOLDOWN;
+	}
+	public void RegisterLastWall() {
+		lastWallCollider = CurrentWallCollider;
 	}
 
 	// -- 공용 이동 계산 --------------------------------
@@ -134,7 +181,10 @@ public class PlayerController : MonoBehaviour {
 
 		//현재 수평 속도에서 목표 속도로 부드럽게 전환
 		Vector3 currentHorizontal = new Vector3(Velocity.x, 0f, Velocity.z);
-		Vector3 newHorizontal = Vector3.MoveTowards(currentHorizontal, targetVel, accel * Time.deltaTime);
+
+		float t = 1f - Mathf.Exp(-accel * Time.deltaTime);
+
+		Vector3 newHorizontal = Vector3.Lerp(currentHorizontal, targetVel, t);
 
 		Velocity = new Vector3(newHorizontal.x, Velocity.y, newHorizontal.z);
 	}
